@@ -13,7 +13,7 @@ function startGame(){
     audio.wheelEnd = loadAudio("wheel-end.mp3");
     audio.battle1 = loadAudio("battle1.mp3");
     audio.battle2 = loadAudio("battle2.mp3");
-    loop = setInterval(update, 25);
+    loop = window.requestAnimFrame(update);
     function playB1(){
         playAudio(audio.battle1, undefined, false, playB2);
     }
@@ -64,49 +64,52 @@ function statusText(text, callback=undefined){
  * Renders all entities and checks held-time.
  */
 function update(){
-    clearScreen();
-    canvas.fillRect(240-5, 500-5, 10, 10)
-    var keys = Object.keys(entities);
-    for (var i = 0; i < keys.length; i++){
-        var current = entities[keys[i]]
-        if (current !== undefined){
-            current.update();
+    setTimeout(function(){
+        window.requestAnimFrame(update);
+        clearScreen();
+        canvas.fillRect(240-5, 500-5, 10, 10)
+        var keys = Object.keys(entities);
+        for (var i = 0; i < keys.length; i++){
+            var current = entities[keys[i]]
+            if (current !== undefined){
+                current.update();
+            }
         }
-    }
-    for (var i = 0; i < wheel.length; i++){
-        wheel[i].update();
-    }
-    if (tapStart === undefined){
-        return;
-    }
-    holdTime = Date.now() - tapStart
-    var enabled = [];
-    for (var i = 0; i < wheel.length; i++){
-        var current = wheel[i];
-        if (current.disabled){
+        for (var i = 0; i < wheel.length; i++){
+            wheel[i].update();
+        }
+        if (tapStart === undefined){
             return;
         }
-        enabled.push(current);
-    }
-    var choices = enabled.length;
-    if (choices === 0){
-        return;
-    }
-    if (holdTime > (choices + 1) * 1000){
-        currentCb = undefined;
-        tapStart = Date.now();
-        callFuncs(enabled, "shrink");
-        return;
-    }
-    for (var i = 1; i <= choices; i++) {
-        if (holdTime > i * 1000 && holdTime < i * 1000 + 750){
-            var shrink = enabled.slice();
-            shrink.splice(i - 1);
-            callFuncs(shrink, "shrink");
-            enabled[i - 1].grow();
-            currentCb = enabled[i - 1 ].getCallback();
+        holdTime = Date.now() - tapStart
+        var enabled = [];
+        for (var i = 0; i < wheel.length; i++){
+            var current = wheel[i];
+            if (current.disabled){
+                return;
+            }
+            enabled.push(current);
         }
-    }
+        var choices = enabled.length;
+        if (choices === 0){
+            return;
+        }
+        if (holdTime > (choices + 1) * 1000){
+            currentCb = undefined;
+            tapStart = Date.now();
+            callFuncs(enabled, "shrink");
+            return;
+        }
+        for (var i = 1; i <= choices; i++) {
+            if (holdTime > i * 1000 && holdTime < i * 1000 + 750){
+                var shrink = enabled.slice();
+                shrink.splice(i - 1);
+                callFuncs(shrink, "shrink");
+                enabled[i - 1].grow();
+                currentCb = enabled[i - 1 ].getCallback();
+            }
+        }
+    }, 1000 / fps);
 }
 
 function inventoryContains(id){
@@ -118,11 +121,73 @@ function inventoryContains(id){
     return false;
 }
 
+function hasRune(letter){
+    for (var i = 0; i < inventory.length; i++) {
+        if (inventory[i].id === "rune" && inventory[i].letter === letter){
+            return true;
+        }
+    }
+    return false;
+}
+
 function fromInventory(id){
     for (var i = 0; i < inventory.length; i++){
         if (inventory[i].id === id){
             return inventory[i];
         }
+    }
+}
+
+function startMorse(targetWord, callback){
+    morse.target = targetWord.toUpperCase().split();
+    morse.callback = callback;
+    morse.buffer = "";
+    morse.receiving = true;
+}
+
+function spawnGrowingText(text, startSize, endSize, time){
+    var text = new Entity.Text(text, "rgba(0, 0, 0, 1)", element.width / 2, element.height / 2, startSize);
+    var growthPerFrame = time / endSize / fps;
+    text.update = function(){
+        if (this.size < endSize){
+            this.size += growthPerFrame
+            canvas.drawText(this.text, this.x, this.y, this.color, this.size);
+            this.last = Date.now();
+            this.opacity = 1.0
+            return;
+        }
+        if (Date.now() < this.last + 5000 || this.color < 0.1){
+            this.opacity -= 0.025;
+            this.color = "rgba(0, 0, 0, " + this.opacity + ")";
+            canvas.drawText(this.text, this.x, this.y, this.color, this.size);
+            return;
+        }
+        delete entities.currentMorseLetter;
+    };
+    entities.currentMorseLetter = text;
+}
+
+function processMorse(input){
+    buffer += input;
+    if (morse.dictionary.hasOwnProperty(buffer)){
+        var letter = morse.dictionary[buffer];
+        if (morse.target[morse.current] === letter){
+            morse.current += 1;
+            if (morse.current >= morse.target.length){
+                morse.target = undefined;
+                morse.callback = undefined;
+                morse.buffer = undefined;
+                morse.receiving = false;
+                morse.callback(morse.failed);
+                return;
+            }
+            return;
+        }
+    }
+    if (buffer.length > 5){
+        morse.failed += 1;
+        morse.current += 1;
+        return;
     }
 }
 
@@ -271,13 +336,13 @@ var Entity = {
      * @returns {object} Enemy object.
      */
     Enemy: function(name, image, hp){
+        this.born = Date.now();
         this.name = name;
         this.image = image;
         this.hp = hp;
         this.update = function(){
             canvas.drawImage(this.image, (element.width - 400) / 2, (element.height - 300) / 4, 400, 300);
-
-            canvas.fillText("HP: " + this.hp, (element.width) / 2, (element.height - 300) / 5);
+            canvas.drawText("HP: " + this.hp, (element.width) / 2, (element.height - 300) / 5, "black", 15);
         };
         this.doDamage = function(damage){
             this.hp -= damage;
@@ -303,6 +368,7 @@ var Entity = {
      * @returns {object} Choice object.
      */
     Choice: function(startAngle, angleLength, x, y){
+        this.born = Date.now();
         this.text = "";
         this.radius = 75
         this.x = x;
@@ -325,7 +391,7 @@ var Entity = {
             canvas.lineWidth = 5;
             canvas.strokeStyle = "black";
             canvas.stroke();
-            canvas.fillText(this.text, ((sx + ex) / 2), ((sy + ey) / 2));
+            canvas.drawText(this.text, ((sx + ex) / 2), ((sy + ey) / 2), "black", 15);
             // Begin Debug
             canvas.fillStyle = "red";
             canvas.fillRect(sx - 3, sy - 3, 6, 6);
@@ -379,17 +445,15 @@ var Entity = {
      * @property {function} setLoc - Set the X and Y location of the text.
      * @returns {object} Text object.
      */
-    Text: function(text, color, x, y){
+    Text: function(text, color, x, y, size=12){
+        this.born = Date.now();
         this.text = text;
         this.color = color;
         this.x = x;
         this.y = y;
+        this.size = size;
         this.update = function(){
-            var oldFont = canvas.font;
-            canvas.font = "20px Arial";
-            canvas.fillStyle = this.color;
-            canvas.fillText(this.text, this.x, this.y);
-            canvas.font = oldFont;
+            canvas.drawText(this.text, this.x, this.y, this.color, this.size);
         };
         this.setText = function(text){
             this.text = text;
@@ -397,7 +461,10 @@ var Entity = {
         this.setLoc = function(x, y){
             this.x = x;
             this.y = y;
-        }
+        };
+        this.setSize = function(size){
+            this.size = size;
+        };
     },
     /**
      * A plain square, used for debugging.
@@ -434,6 +501,7 @@ var Item = {
      * @returns {object} Potion object.
      */
     Potion: function(amount){
+        this.born = Date.now();
         this.name = "Potion";
         this.id = "potion";
         this.desc = "Heal 25 Hit Points";
@@ -450,6 +518,7 @@ var Item = {
         }
     },
     Rune: function(amount, letter){
+        this.born = Date.now();
         this.name = "Rune";
         this.id = "rune";
         this.letter = letter;
@@ -464,10 +533,62 @@ var Item = {
     }
 }
 
+var Spell = {
+    Ice: function(){
+        this.name = "Ice";
+        this.runes = ["I", "C", "E"];
+        this.canUse = function(){
+            for (var i = 0; i < this.runes.length; i++) {
+                if (!hasRune(this.runes[i])){
+                    return false;
+                }
+            }
+            return true;
+        };
+        this.use = function(){
+            var alive = entities.enemy.doDamage(10);
+            if (alive){
+                Menu.Battle;
+                return;
+            }
+            statusText(entities.enemy.name + " Defeated!", Menu.Main);
+            entities.enemy = undefined;
+        };
+    }
+}
+
 // Initializing of game begins here.
 
 var element = document.getElementById("canvas");
 var canvas = element.getContext("2d");
+canvas.drawText = function(text, x, y, color, fontSize, fontFamily){
+    if (color === undefined){
+        color = "black"
+    };
+    if (fontSize === undefined){
+        fontSize = 10
+    };
+    if (fontFamily === undefined){
+        fontFamily = "Ariel"
+    };
+    canvas.fillStyle = color;
+    canvas.font = fontSize + "px " + fontFamily;
+    canvas.fillText(text, x, y);
+}
+
+var fps = 30;
+
+window.requestAnimFrame = (function(){
+    return window.requestAnimationFrame       ||
+           window.webkitRequestAnimationFrame ||
+           window.mozRequestAnimationFrame    ||
+           window.oRequestAnimationFrame      ||
+           window.msRequestAnimationFrame     ||
+           function(callback){
+              window.setTimeout(callback, 1000 / fps);
+           };
+})();
+
 var audio = {
     playing: []
 }
@@ -488,6 +609,42 @@ var tap = undefined;
 var currentCb = undefined;
 var tapStart = undefined;
 var loop = undefined;
+var morse = {
+    receiving: false,
+    buffer: undefined,
+    target: undefined,
+    current: undefined,
+    failed: undefined,
+    callback: undefined,
+    dictionary: {
+        ".-": "a",
+        "-...": "b",
+        "-.-.": "c",
+        "-..": "d",
+        ".": "e",
+        "..-.": "f",
+        "--.": "g",
+        "....": "h",
+        "..": "i",
+        ".---": "j",
+        "-.-": "k",
+        ".-..": "l",
+        "--": "m",
+        "-.": "n",
+        "---": "o",
+        ".--.": "p",
+        "--.-": "q",
+        ".-.": "r",
+        "...": "s",
+        "-": "t",
+        "..-": "u",
+        "...-": "v",
+        ".--": "w",
+        "-..-": "x",
+        "-.--": "y",
+        "--..": "z"
+    }
+};
 
 element.addEventListener("mousedown", function(event){
     tapStart = Date.now();
@@ -495,6 +652,14 @@ element.addEventListener("mousedown", function(event){
 
 element.addEventListener("mouseup", function(event){
     var holdTime = Date.now() - tapStart
+    if (morse.receiving){
+        if (holdTime < 500){
+            processMorse(".");
+            return;
+        }
+        processMorse("-");
+        return;
+    }
     tapStart = undefined;
     callFuncs(wheel, "shrink");
     if (currentCb !== undefined){
