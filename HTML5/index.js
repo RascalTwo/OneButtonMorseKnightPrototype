@@ -7,13 +7,9 @@ function startGame(){
 
     var w = element.width / 2;
     var h = element.height - 100;  // Padding at bottom of screen.
-    wheel.up = new Entity.Choice(1.25, w, h, 0, -50);
-    wheel.down = new Entity.Choice(0.25, w, h, 0, 50);
-    wheel.left = new Entity.Choice(0.75, w, h, -50, 0);
-    wheel.right = new Entity.Choice(1.75, w, h, 50, 0);
     // See http://www.w3schools.com/tags/img_arc.gif for arc start and end points.
     Menu.Main();
-    loop = setInterval(update, 10);
+    loop = setInterval(update, 25);
 }
 
 /**
@@ -33,23 +29,18 @@ function clearScreen(){
  */
 function statusText(text, callback=undefined){
     entities.status = new Entity.Text(text, "red", element.width / 2, 50);
-    wheelState = [  // Makes it so the wheels to back to their state before the status text.
-        wheel.up.disabled,
-        wheel.down.disabled,
-        wheel.left.disabled,
-        wheel.right.disabled
-    ]
-    wheel.up.setDisabled(true);
-    wheel.down.setDisabled(true);
-    wheel.left.setDisabled(true);
-    wheel.right.setDisabled(true);
+    wheelState = [];
+    for (var i = 0; i < wheel.length; i++){
+        var current = wheel[i];
+        wheelState.push(current.disabled);
+        current.setDisabled(true);
+    }
     tap = function(){
         delete entities.status;
         tap = undefined;
-        wheel.up.setDisabled(wheelState[0]);
-        wheel.down.setDisabled(wheelState[1]);
-        wheel.left.setDisabled(wheelState[2]);
-        wheel.right.setDisabled(wheelState[3]);
+        for (var i = 0; i < wheel.length; i++){
+            wheel[i].setDisabled(wheelState[i]);
+        }
         if (callback === undefined){
             return;
         }
@@ -63,136 +54,102 @@ function statusText(text, callback=undefined){
  */
 function update(){
     clearScreen();
+    canvas.fillRect(240-5, 500-5, 10, 10)
     var keys = Object.keys(entities);
-    for (var i = keys.length - 1; i >= 0; i--){
+    for (var i = 0; i < keys.length; i++){
         var current = entities[keys[i]]
         if (current !== undefined){
             current.update();
         }
     }
-    var keys = Object.keys(wheel);
-    for (var i = keys.length - 1; i >= 0; i--){
-        wheel[keys[i]].update();
+    for (var i = 0; i < wheel.length; i++){
+        wheel[i].update();
     }
     if (tapStart === undefined){
         return;
     }
     holdTime = Date.now() - tapStart
     var enabled = [];
-    if (!wheel.down.disabled){
-        enabled.push(wheel.down);
-    }
-    if (!wheel.left.disabled){
-        enabled.push(wheel.left);
-    }
-    if (!wheel.up.disabled){
-        enabled.push(wheel.up);
-    }
-    if (!wheel.right.disabled){
-        enabled.push(wheel.right);
-    }
-    // Got lazy, hence the reason for the code below.
-    switch(enabled.length){
-        case 0:
+    for (var i = 0; i < wheel.length; i++){
+        var current = wheel[i];
+        if (current.disabled){
             return;
-
-        case 1:
-            if (holdTime > 1000 && holdTime < 1500){
-                enabled[0].grow();
-                currentCb = enabled[0].getCallback();
-            }
-            else if (holdTime > 2000){
-                currentCb = undefined;
-                tapStart = Date.now();
-                enabled[0].shrink()
-            }
-
-        case 2:
-            if (holdTime > 1000 && holdTime < 1500){
-                enabled[0].grow();
-                currentCb = enabled[0].getCallback();
-            }
-            else if (holdTime > 2000 && holdTime < 2500){
-                enabled[1].grow();
-                currentCb = enabled[1].getCallback();
-                enabled[0].shrink()
-            }
-            else if (holdTime > 3000){
-                currentCb = undefined;
-                tapStart = Date.now();
-                enabled[1].shrink()
-                enabled[0].shrink()
-            }
-
-        case 3:
-            if (holdTime > 1000 && holdTime < 1500){
-                enabled[0].grow();
-                currentCb = enabled[0].getCallback();
-            }
-            else if (holdTime > 2000 && holdTime < 2500){
-                enabled[1].grow();
-                currentCb = enabled[1].getCallback();
-                enabled[0].shrink()
-            }
-            else if (holdTime > 3000 && holdTime < 3500){
-                enabled[2].grow();
-                currentCb = enabled[2].getCallback();
-                enabled[1].shrink()
-                enabled[0].shrink()
-            }
-            else if (holdTime > 4000){
-                currentCb = undefined;
-                tapStart = Date.now();
-                enabled[2].shrink()
-                enabled[1].shrink()
-                enabled[0].shrink()
-            }
-
-        case 4:
-            if (holdTime > 1000 && holdTime < 1500){
-                enabled[0].grow();
-                currentCb = enabled[0].getCallback();
-            }
-            else if (holdTime > 2000 && holdTime < 2500){
-                enabled[1].grow();
-                currentCb = enabled[1].getCallback();
-                enabled[0].shrink()
-            }
-            else if (holdTime > 3000 && holdTime < 3500){
-                enabled[2].grow();
-                currentCb = enabled[2].getCallback();
-                enabled[1].shrink()
-                enabled[0].shrink()
-            }
-            else if (holdTime > 4000 && holdTime < 4500){
-                enabled[3].grow();
-                currentCb = enabled[3].getCallback();
-                enabled[2].shrink()
-                enabled[1].shrink()
-                enabled[0].shrink()
-            }
-            else if (holdTime > 5000){
-                currentCb = undefined;
-                tapStart = Date.now();
-                enabled[3].shrink()
-                enabled[2].shrink()
-                enabled[1].shrink()
-                enabled[0].shrink()
-            }
+        }
+        enabled.push(current);
+    }
+    var choices = enabled.length;
+    if (choices === 0){
+        return;
+    }
+    if (holdTime > (choices + 1) * 1000){
+        currentCb = undefined;
+        tapStart = Date.now();
+        callFuncs(enabled, "shrink");
+        return;
+    }
+    for (var i = 1; i <= choices; i++) {
+        if (holdTime > i * 1000 && holdTime < i * 1000 + 750){
+            var shrink = enabled.slice();
+            shrink.splice(i - 1);
+            callFuncs(shrink, "shrink");
+            enabled[i - 1].grow();
+            currentCb = enabled[i - 1 ].getCallback();
+        }
     }
 }
 
-
-/**
- * Damages the current enemy via taping, to be assigned to the 'tap' variable.
- */
-function tapDamage(){  // Will be moved into the future-Tap action object.
-    var alive = entities.enemy.doDamage(25);
-    if (alive){
-        return;
+function inventoryContains(id){
+    for (var i = 0; i < inventory.length; i++){
+        if (inventory[i].id === id){
+            return true;
+        }
     }
-    statusText(entities.enemy.name + " Defeated!", Menu.Main);
-    entities.enemy = undefined;
+    return false;
+}
+
+function fromInventory(id){
+    for (var i = 0; i < inventory.length; i++){
+        if (inventory[i].id === id){
+            return inventory[i];
+        }
+    }
+}
+
+function defineChoices(startAngle, choices){
+    wheel = [];
+    var choiceLength = 2 / choices.length;
+    var w = element.width / 2;
+    var h = element.height - 100;
+    for (var i = 0; i < choices.length; i++) {
+        var current = choices[i];
+        var choice;
+        if (i === 0){
+            choice = new Entity.Choice(startAngle, choiceLength, w, h);
+        }
+        else{
+            choice = new Entity.Choice(startAngle + choiceLength * i, choiceLength, w, h);
+        }
+        choice.setup(current[0], current[1]);
+        wheel.push(choice);
+    }
+}
+
+function callFuncs(target, func){
+    if (!Array.isArray(target)){
+        var keys = Object.keys(target);
+        for (var i = 0; i < keys.length; i++){
+            var current = target[keys[i]];
+            if (current !== null && current !== undefined && current.hasOwnProperty(func)){
+                current[func]();
+            }
+        }
+    }
+    for (var i = 0; i < target.length; i++){
+        var current = target[i];
+        if (current !== null && current !== undefined && current.hasOwnProperty(func)){
+            current[func]();
+        }
+    }
 }
 
 /**
@@ -205,41 +162,50 @@ var Menu = {
      * Launches the main menu.
      */
     Main: function(){
-        wheel.up.setup("Battle", function(){
-            var image = new Image();
-            image.src = "tonberry.png"
-            image.onload = function(){
-                entities.enemy = new Entity.Enemy("Tonberry", image, 100);
-                Menu.Battle();
-            }
-        });
-
-        wheel.down.setup("Down", function(){
-            statusText("Nothing to see down here", Menu.Main);
-        });
-
-        wheel.left.setup("Left", function(){
-            statusText("Nothing to see over here", Menu.Main);
-        });
-
-        wheel.right.setup("Right", function(){
-            statusText("Nothing to see over here", Menu.Main);
-        });
+        defineChoices(0.25, [
+            ["Down", function(){
+                statusText("Noting to see down here.", Menu.Main);
+            }],
+            ["Left", function(){
+                statusText("Nothing to see on the left.", Menu.Main);
+            }],
+            ["Battle", function(){
+                var image = new Image();
+                image.src = "tonberry.png"
+                image.onload = function(){
+                    entities.enemy = new Entity.Enemy("Tonberry", image, 100);
+                    Menu.Battle();
+                }
+            }],
+            ["Right", function(){
+                statusText("Nothing to see over here", Menu.Main);
+            }]
+        ]);
         tap = undefined;
     },
     /**
      * Launches the battle menu.
      */
     Battle: function(){
-        wheel.up.disable();
-        wheel.down.disable();
-        wheel.left.setup("Magic", function(){
-            statusText("Abra Ka Dabra...nothing happens.", Menu.Battle);
-        });
-        wheel.right.setup("Items", function(){
-            statusText("You have a potion...but you can't use it.", Menu.Battle);
-        });
-        tap = tapDamage;
+        defineChoices(0.0, [
+            ["Attack", function(){
+                statusText("You perform a light attack.", function(){
+                    var alive = entities.enemy.doDamage(5);
+                    if (alive){
+                        Menu.Battle;
+                        return;
+                    }
+                    statusText(entities.enemy.name + " Defeated!", Menu.Main);
+                    entities.enemy = undefined;
+                });
+            }],
+            ["Magic", function(){
+                statusText("Abra Ka Dabra...nothing happens.", Menu.Battle);
+            }],
+            ["Items", function(){
+                statusText("You have a potion...but you can't use it.", Menu.Battle);
+            }]
+        ]);
     }
 }
 
@@ -289,14 +255,13 @@ var Entity = {
      * @property {function} setup - Set the text, and callback, then re-enable the choice.
      * @returns {object} Choice object.
      */
-    Choice: function(startAngle, x, y, textX, textY){
-        this.startAngle = startAngle;
+    Choice: function(startAngle, angleLength, x, y){
         this.text = "";
         this.radius = 75
         this.x = x;
         this.y = y;
-        this.textX = textX;
-        this.textY = textY;
+        this.sa = startAngle * Math.PI;
+        this.ea = (startAngle + angleLength) * Math.PI
         this.callback = undefined;
         this.growOffset = 0;
         this.disabled = false;
@@ -304,38 +269,30 @@ var Entity = {
             if (this.disabled){
                 return;
             }
+            var sx = this.x + this.radius*Math.cos(this.sa);
+            var sy = this.y + this.radius*Math.sin(this.sa);
+            var ex = this.x + this.radius*Math.cos(this.ea);
+            var ey = this.y + this.radius*Math.sin(this.ea);
             canvas.beginPath();
-            canvas.arc(this.x, this.y, this.radius, this.startAngle * Math.PI, (this.startAngle + 0.5) * Math.PI, false);
+            canvas.arc(this.x, this.y, this.radius, this.sa, this.ea, false);
             canvas.lineWidth = 5;
             canvas.strokeStyle = "black";
             canvas.stroke();
-            canvas.closePath();
-            if (this.textX === 0){
-                canvas.fillText(this.text, this.x, this.y + this.textY + this.growOffset);
-                return;
-            }
-            canvas.fillText(this.text, this.x + this.textX + this.growOffset, this.y);
+            canvas.fillText(this.text, ((sx + ex) / 2), ((sy + ey) / 2));
+            // Begin Debug
+            canvas.fillStyle = "red";
+            canvas.fillRect(sx - 3, sy - 3, 6, 6);
+            canvas.fillStyle = "green";
+            canvas.fillRect(ex - 5, ey - 5, 10, 10);
+            canvas.fillStyle = "black";
+            canvas.fillRect(((sx + ex) / 2) - 2,((sy + ey) / 2) - 2, 4, 4);
+            // End Debug
         };
         this.grow = function(){
             this.radius = 100;
-            if (this.textX === 0){
-                if (this.textY > 0){
-                    this.growOffset = 25
-                    return;
-                }
-                this.growOffset = -25;
-                return;
-            }
-            if (this.textX > 0){
-                this.growOffset = 25
-                return;
-            }
-            this.growOffset = -25;
-            return;
         };
         this.shrink = function(){
             this.radius = 75;
-            this.growOffset = 0;
         };
         this.setCallback = function(callback){
             this.callback = callback;
@@ -431,6 +388,7 @@ var Item = {
      */
     Potion: function(amount){
         this.name = "Potion";
+        this.id = "potion";
         this.desc = "Heal 25 Hit Points";
         this.amount = amount;
         this.use = function(){
@@ -443,6 +401,19 @@ var Item = {
                 return true;
             }
         }
+    },
+    Rune: function(amount, letter){
+        this.name = "Rune";
+        this.id = "rune";
+        this.letter = letter;
+        this.desc = "A magic rune with the letter " + letter + " on it";
+        this.amount = amount;
+        this.use = function(){
+            this.amount -= 1;
+            if (amount <= 0){
+                return true;
+            }
+        };
     }
 }
 
@@ -462,12 +433,7 @@ var inventory = [
 var entities = {
 
 }
-var wheel = {
-    up: undefined,
-    down: undefined,
-    left: undefined,
-    right: undefined
-}
+var wheel = [];
 var tap = undefined;
 var currentCb = undefined;
 var tapStart = undefined;
@@ -480,24 +446,31 @@ element.addEventListener("mousedown", function(event){
 element.addEventListener("mouseup", function(event){
     var holdTime = Date.now() - tapStart
     tapStart = undefined;
-    wheel.up.shrink();
-    wheel.down.shrink();
-    wheel.left.shrink();
-    wheel.right.shrink();
+    callFuncs(wheel, "shrink");
     if (currentCb !== undefined){
         currentCb();
         currentCb = undefined;
         return;
     }
-    if (tap !== undefined && holdTime < 250){
-        tap();
+    if (holdTime < 250){
+        if (tap === undefined){
+            var cb = wheel[0].getCallback()
+            if (cb !== undefined){
+                cb();
+            }
+        }
+        else{
+            tap();
+        }
     }
+    // Begin Debug
     if (entities.hasOwnProperty("text")){
         entities.text.setText(holdTime);
         entities.text.setLoc(event.layerX, event.layerY);
         return;
     }
-    entities.text = new Entity.Text(holdTime, "black", event.layerX, event.layerY);
+    entities.text = new Entity.Text(event.layerX + " " + event.layerY, "black", event.layerX, event.layerY);
+    // End Debug
 });
 
 startGame();
