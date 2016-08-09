@@ -9,7 +9,18 @@ function startGame(){
     var h = element.height - 100;  // Padding at bottom of screen.
     // See http://www.w3schools.com/tags/img_arc.gif for arc start and end points.
     Menu.Main();
+    audio.wheelCharge = loadAudio("wheel-charge.mp3");
+    audio.wheelEnd = loadAudio("wheel-end.mp3");
+    audio.battle1 = loadAudio("battle1.mp3");
+    audio.battle2 = loadAudio("battle2.mp3");
     loop = setInterval(update, 25);
+    function playB1(){
+        playAudio(audio.battle1, undefined, false, playB2);
+    }
+    function playB2(){
+        playAudio(audio.battle2, undefined, false, playB1);
+    }
+    playB1();
 }
 
 /**
@@ -150,6 +161,42 @@ function callFuncs(target, func){
             current[func]();
         }
     }
+}
+
+function loadAudio(filename){
+    var currentAudio = document.createElement("audio");
+    currentAudio.setAttribute("id", filename);
+    currentAudio.setAttribute("src", filename);
+    currentAudio.setAttribute("width", "1px");
+    currentAudio.setAttribute("height", "1px");
+    currentAudio.setAttribute("scrolling", "no");
+    currentAudio.style.border = "0px";
+    document.body.appendChild(currentAudio);
+    return currentAudio;
+}
+
+function playAudio(currentAudio, inSeconds=undefined, override=false, callback=undefined){
+    if (audio.playing.indexOf(currentAudio.getAttribute("id")) !== -1 && !override){
+        return;
+    }
+    if (currentAudio.readyState !== 4){
+        setTimeout(function(){playAudio(currentAudio, inSeconds, override, callback)}, 1000);
+        return;
+    }
+    if (inSeconds === undefined){
+        inSeconds = currentAudio.duration;
+    }
+    audio.playing.push(currentAudio.getAttribute("id"));
+    var rate = inSeconds / currentAudio.duration;
+    currentAudio.playbackRate = rate;
+    currentAudio.play();
+    setTimeout(function(){
+        var index = audio.playing.indexOf(currentAudio.getAttribute("id"));
+        audio.playing.splice(index, 1);
+        if (callback !== undefined){
+            callback();
+        }
+    }, inSeconds * 1000);
 }
 
 /**
@@ -421,6 +468,9 @@ var Item = {
 
 var element = document.getElementById("canvas");
 var canvas = element.getContext("2d");
+var audio = {
+    playing: []
+}
 
 var stats = {
     hp: 100,
