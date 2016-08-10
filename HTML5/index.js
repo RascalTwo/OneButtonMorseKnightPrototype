@@ -88,6 +88,7 @@ function statusText(text, callback=undefined){
             if (callback === undefined){
                 return;
             }
+            tapStart = undefined;
             callback();
         }
     }
@@ -120,14 +121,33 @@ function fromInventory(id){
 }
 
 function startMorse(targetWord, callback){
-    morse.target = targetWord.toUpperCase().split();
+    entities.circle.setPointer(null);
+    for (var i = 0; i < wheel.length; i++){
+        wheel[i].setDisabled(true);
+    }
+    morse.target = targetWord.toLowerCase().split("");
+    morse.target = morse.target.map(function(letter){
+        var keys = Object.keys(morse.dictionary);
+        for (var i = 0; i < keys.length; i++){
+            var current = morse.dictionary[keys[i]]
+            if (current === letter){
+                return keys[i];
+            }
+        }
+    });
+    morse.word = targetWord.toUpperCase().split("");
     morse.callback = callback;
     morse.buffer = "";
+    morse.current = 0;
+    morse.failed = 0;
     morse.receiving = true;
+    tapStart = undefined;
+    entities.status = new Entity.Text(morse.word[0], "red", element.width / 2, 25, 25);
+    spawnGrowingText(morse.target[0][0], 75, 100, 1000);
 }
 
 function spawnGrowingText(text, startSize, endSize, time){
-    var text = new Entity.Text(text, "rgba(0, 0, 0, 1)", element.width / 2, element.height / 2, startSize);
+    var text = new Entity.Text(text, "rgba(0, 0, 0, 1)", element.width / 2, element.height / 5 * 3, startSize);
     var growthPerFrame = time / endSize / fps;
     text.update = function(){
         if (this.size < endSize){
@@ -148,28 +168,53 @@ function spawnGrowingText(text, startSize, endSize, time){
     entities.currentMorseLetter = text;
 }
 
-function processMorse(input){
-    buffer += input;
-    if (morse.dictionary.hasOwnProperty(buffer)){
-        var letter = morse.dictionary[buffer];
-        if (morse.target[morse.current] === letter){
-            morse.current += 1;
-            if (morse.current >= morse.target.length){
-                morse.target = undefined;
-                morse.callback = undefined;
-                morse.buffer = undefined;
-                morse.receiving = false;
-                morse.callback(morse.failed);
-                return;
+// I would be weary of doing things in 'processMorse()'
+function processMorse(holdTime){
+    function tryFinish(){
+        if (morse.current >= morse.target.length){
+            morse.target = undefined;
+            morse.buffer = undefined;
+            morse.receiving = false;
+            if (entities.hasOwnProperty("currentMorseLetter")){
+                delete entities.currentMorseLetter;
             }
+            morse.callback(morse.failed);
+            morse.callback = undefined;
+            return true;
+        }
+        return false;
+    }
+    if (holdTime > 500){
+        morse.buffer += "-";
+    }
+    else{
+        morse.buffer += "."
+    }
+    // Current morse string equals the target morst string, good.
+    if (morse.target[morse.current] === morse.buffer){
+        morse.current += 1;
+        morse.buffer = "";
+        if (tryFinish()){
             return;
         }
-    }
-    if (buffer.length > 5){
-        morse.failed += 1;
-        morse.current += 1;
+        entities.status.setText(morse.word[morse.current]);
+        spawnGrowingText(morse.target[morse.current][0], 75, 100, 1000);
         return;
     }
+    // Current morse character does not equal target morse character at this point, bad.
+    if (morse.buffer[morse.buffer.length - 1] !== morse.target[morse.current][morse.buffer.length - 1]){
+        morse.failed += 1;
+        morse.current += 1;
+        morse.buffer = "";
+        if (tryFinish()){
+            return;
+        }
+        entities.status.setText(morse.word[morse.current]);
+        spawnGrowingText(morse.target[morse.current][0], 75, 100, 1000);
+        return;
+    }
+    entities.status.setText(morse.word[morse.current]);
+    spawnGrowingText(morse.target[morse.current][morse.buffer.length], 75, 100, 1000);
 }
 
 function defineChoices(choices){
@@ -217,7 +262,7 @@ function addMultiEventListener(on, events, callback){
 }
 
 function wrapText(text, x, y, maxWidth, lineHeight) {
-    var words = text.split(' ');
+    var words = text.split(" ");
     var line = "";
 
     for(var i = 0; i < words.length; i++){
@@ -297,6 +342,9 @@ function update(){
             entities.circle.setFill(0);
             return;
         }
+        if (morse.receiving){
+            entities.circle.setFill(parseInt((holdTime / 500) * 100));
+        }
         holdTime = Date.now() - tapStart
         if (holdTime < 250 || currentChoice === undefined){
             return;
@@ -372,7 +420,30 @@ var Menu = {
                 });
             }],
             ["Heavy", function(){
-                statusText("You would do a heavy attack, but you're bad", Menu.Battle);
+                startMorse("TONBERRY", function(failedAmount){
+                    var percentage = failedAmount / 8;
+                    statusText("You missed " + (percentage * 100) + "%, " + failedAmount + " letters.", function(){
+                        var avg = parseInt(15 - percentage)
+                        var damage = randomBetween(avg - 1, avg + 1);
+                        var alive = entities.enemy.doDamage(damage);
+                        if (alive){
+                            statusText("You did " + damage + " points of damage!", function(){
+                                var damage = entities.enemy.getDamage();
+                                stats.hp -= damage;
+                                entities.hp.setText("HP: " + stats.hp)
+                                if (stats.hp > 0){
+                                    statusText("You took " + damage + " points of damage!", Menu.Battle);
+                                    return;
+                                }
+                                statusText("You died after you took " + damage + " points of damage...", resetGame);
+                            });
+                            return;
+                        }
+                        var name = entities.enemy.name;
+                        delete entities.enemy;
+                        statusText("You defeated the " + name + "!", Menu.Main);
+                    });
+                });
             }],
             ["Defend", function(){
                 statusText("You are on defence", function(){
@@ -527,6 +598,9 @@ var Entity = {
         };
         this.setFill = function(percentage){
             this.fill = percentage / 2;
+            if (this.fill > 50){
+                this.fill = 50;
+            }
         };
     },
     /**
@@ -776,12 +850,9 @@ addMultiEventListener(document, ["mousedown", "keydown"], function(event){
 
 addMultiEventListener(document, ["mouseup", "keyup"], function(event){
     var holdTime = Date.now() - tapStart
-    if (morse.receiving){
-        if (holdTime < 500){
-            processMorse(".");
-            return;
-        }
-        processMorse("-");
+    if (morse.receiving && holdTime){
+        tapStart = undefined;
+        processMorse(holdTime);
         return;
     }
     if (tap !== undefined && tapStart > tap.when){
