@@ -6,14 +6,24 @@ function startGame(){
     canvas.textAlign = "center";
 
     var w = element.width / 2;
-    var h = element.height - 100;  // Padding at bottom of screen.
+    var h = element.height - 75;  // Padding at bottom of screen.
     // See http://www.w3schools.com/tags/img_arc.gif for arc start and end points.
-    Menu.Main();
+
+    var wOffset = 130;
+    var hOffset = 30;
+    wheel.push(new Entity.Choice(w-wOffset, h-hOffset, "tl"));
+    wheel.push(new Entity.Choice(w+wOffset, h-hOffset, "tr"));
+    wheel.push(new Entity.Choice(w-wOffset, h+hOffset, "bl"));
+    wheel.push(new Entity.Choice(w+wOffset, h+hOffset, "br"));
+
+    entities.circle = new Entity.Circle(w, h);
+    entities.hp = new Entity.Text("HP: " + stats.hp, "red", 50, element.height - 10, 15);
+
     audio.wheelCharge = loadAudio("wheel-charge.mp3");
     audio.wheelEnd = loadAudio("wheel-end.mp3");
     audio.battle1 = loadAudio("battle1.mp3");
     audio.battle2 = loadAudio("battle2.mp3");
-    loop = window.requestAnimFrame(update);
+
     function playB1(){
         playAudio(audio.battle1, undefined, false, playB2);
     }
@@ -21,6 +31,27 @@ function startGame(){
         playAudio(audio.battle2, undefined, false, playB1);
     }
     playB1();
+    loop = window.requestAnimFrame(update);
+    Menu.Main();
+}
+
+function resetGame(){
+    stats = {
+        hp: 100,
+        maxHp: 100
+    };
+
+    if (entities.hasOwnProperty("status")){
+        delete entities.status;
+    }
+    if (entities.hasOwnProperty("enemy")){
+        delete entities.enemy;
+    }
+    entities.hp.setText("HP: " + stats.hp);
+    inventory = [
+        new Item.Potion(3)
+    ];
+    Menu.Main();
 }
 
 /**
@@ -30,7 +61,6 @@ function clearScreen(){
     canvas.clearRect(0, 0, element.width, element.height);
 }
 
-
 /**
  * Presents a text status that can be tapped away.
  * Allows a callback function to be executed after the text message is disregarded.
@@ -39,77 +69,28 @@ function clearScreen(){
  * @param {function} callback - Function to be executed after the status message is disregarded.
  */
 function statusText(text, callback=undefined){
-    entities.status = new Entity.Text(text, "red", element.width / 2, 50);
+    entities.circle.setPointer(null);
+    entities.status = new Entity.Text(text, "red", element.width / 2, 25, 25);
     wheelState = [];
     for (var i = 0; i < wheel.length; i++){
         var current = wheel[i];
         wheelState.push(current.disabled);
         current.setDisabled(true);
     }
-    tap = function(){
-        delete entities.status;
-        tap = undefined;
-        for (var i = 0; i < wheel.length; i++){
-            wheel[i].setDisabled(wheelState[i]);
-        }
-        if (callback === undefined){
-            return;
-        }
-        callback();
-    }
-}
-
-/**
- * Game loop function.
- * Renders all entities and checks held-time.
- */
-function update(){
-    setTimeout(function(){
-        window.requestAnimFrame(update);
-        clearScreen();
-        canvas.fillRect(240-5, 500-5, 10, 10)
-        var keys = Object.keys(entities);
-        for (var i = 0; i < keys.length; i++){
-            var current = entities[keys[i]]
-            if (current !== undefined){
-                current.update();
+    tap = {
+        when: Date.now(),
+        callback: function(){
+            delete entities.status;
+            tap = undefined;
+            for (var i = 0; i < wheel.length; i++){
+                wheel[i].setDisabled(wheelState[i]);
             }
-        }
-        for (var i = 0; i < wheel.length; i++){
-            wheel[i].update();
-        }
-        if (tapStart === undefined){
-            return;
-        }
-        holdTime = Date.now() - tapStart
-        var enabled = [];
-        for (var i = 0; i < wheel.length; i++){
-            var current = wheel[i];
-            if (current.disabled){
+            if (callback === undefined){
                 return;
             }
-            enabled.push(current);
+            callback();
         }
-        var choices = enabled.length;
-        if (choices === 0){
-            return;
-        }
-        if (holdTime > (choices + 1) * 1000){
-            currentCb = undefined;
-            tapStart = Date.now();
-            callFuncs(enabled, "shrink");
-            return;
-        }
-        for (var i = 1; i <= choices; i++) {
-            if (holdTime > i * 1000 && holdTime < i * 1000 + 750){
-                var shrink = enabled.slice();
-                shrink.splice(i - 1);
-                callFuncs(shrink, "shrink");
-                enabled[i - 1].grow();
-                currentCb = enabled[i - 1 ].getCallback();
-            }
-        }
-    }, 1000 / fps);
+    }
 }
 
 function inventoryContains(id){
@@ -191,29 +172,26 @@ function processMorse(input){
     }
 }
 
-function defineChoices(startAngle, choices){
-    wheel = [];
-    var choiceLength = 2 / choices.length;
-    var w = element.width / 2;
-    var h = element.height - 100;
-    for (var i = 0; i < choices.length; i++) {
-        var current = choices[i];
-        var choice;
-        if (i === 0){
-            choice = new Entity.Choice(startAngle, choiceLength, w, h);
+function defineChoices(choices){
+    entities.circle.setPointer(null);
+    var choicesAmount = choices.length;
+    for (var i = 0; i < wheel.length; i++) {
+        if (i >= choicesAmount){
+            wheel[i].disable();
+            continue;
         }
-        else{
-            choice = new Entity.Choice(startAngle + choiceLength * i, choiceLength, w, h);
-        }
-        choice.setup(current[0], current[1]);
-        wheel.push(choice);
+        wheel[i].setup(choices[i][0], choices[i][1]);
     }
 }
 
-function callFuncs(target, func){
+function callFuncs(target, func, check=true){
     if (!Array.isArray(target)){
         var keys = Object.keys(target);
         for (var i = 0; i < keys.length; i++){
+            if (!check){
+                target[keys[i]][func]();
+                continue;
+            }
             var current = target[keys[i]];
             if (current !== null && current !== undefined && current.hasOwnProperty(func)){
                 current[func]();
@@ -221,11 +199,52 @@ function callFuncs(target, func){
         }
     }
     for (var i = 0; i < target.length; i++){
+        if (!check){
+            target[i][func]();
+            continue;
+        }
         var current = target[i];
         if (current !== null && current !== undefined && current.hasOwnProperty(func)){
             current[func]();
         }
     }
+}
+
+function addMultiEventListener(on, events, callback){
+    for (var i = 0; i < events.length; i++) {
+        on.addEventListener(events[i], callback);
+    }
+}
+
+function wrapText(text, x, y, maxWidth, lineHeight) {
+    var words = text.split(' ');
+    var line = "";
+
+    for(var i = 0; i < words.length; i++){
+        var testLine = line + words[i] + " ";
+        var metrics = canvas.measureText(testLine);
+        var testWidth = metrics.width;
+        if (testWidth > maxWidth && i > 0) {
+            canvas.fillText(line, x, y);
+            line = words[i] + " ";
+            y += lineHeight;
+        }
+        else {
+            line = testLine;
+        }
+    }
+    canvas.fillText(line, x, y);
+}
+
+function randomBetween(min, max){
+    return Math.floor(Math.random() * (max - min + 1) + min);
+}
+
+function uuid4(){
+    function s4() {
+        return Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
+    }
+    return s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
 }
 
 function loadAudio(filename){
@@ -265,57 +284,110 @@ function playAudio(currentAudio, inSeconds=undefined, override=false, callback=u
 }
 
 /**
+ * Game loop function.
+ * Renders all entities and checks held-time.
+ */
+function update(){
+    setTimeout(function(){
+        window.requestAnimFrame(update);
+        clearScreen();
+        callFuncs(entities, "update", false);
+        callFuncs(wheel, "update", false);
+        if (tapStart === undefined){
+            entities.circle.setFill(0);
+            return;
+        }
+        holdTime = Date.now() - tapStart
+        if (holdTime < 250 || currentChoice === undefined){
+            return;
+        }
+        if (holdTime < 1250){
+            entities.circle.setFill(parseInt((holdTime / 1250) * 100));
+            return;
+        }
+        if (currentChoice !== undefined){
+            entities.circle.setFill(0);
+            currentChoice.getCallback()()
+            currentChoice = undefined;
+            return;
+        }
+    }, 1000 / fps);
+}
+
+/**
  * Container for all functions that show wheel menus.
  *
  */
-
 var Menu = {
+    // Say "Hello" to the "Pyramids of doom"!
     /**
      * Launches the main menu.
      */
     Main: function(){
-        defineChoices(0.25, [
-            ["Down", function(){
-                statusText("Noting to see down here.", Menu.Main);
-            }],
-            ["Left", function(){
-                statusText("Nothing to see on the left.", Menu.Main);
-            }],
-            ["Battle", function(){
-                var image = new Image();
-                image.src = "tonberry.png"
-                image.onload = function(){
-                    entities.enemy = new Entity.Enemy("Tonberry", image, 100);
-                    Menu.Battle();
-                }
-            }],
-            ["Right", function(){
-                statusText("Nothing to see over here", Menu.Main);
+        defineChoices([
+            ["Enter Battle!", function(){
+                entities.enemy = new Entity.Enemy("Tonberry", "tonberry.png", [16, 22], [5, 7]);
+                statusText("A wild " + entities.enemy.name + " Appears!", Menu.Battle);
             }]
         ]);
-        tap = undefined;
     },
-    /**
-     * Launches the battle menu.
-     */
     Battle: function(){
-        defineChoices(0.0, [
+        defineChoices([
             ["Attack", function(){
-                statusText("You perform a light attack.", function(){
-                    var alive = entities.enemy.doDamage(5);
-                    if (alive){
-                        Menu.Battle;
-                        return;
-                    }
-                    statusText(entities.enemy.name + " Defeated!", Menu.Main);
-                    entities.enemy = undefined;
-                });
+                Menu.Attack();
             }],
             ["Magic", function(){
-                statusText("Abra Ka Dabra...nothing happens.", Menu.Battle);
+                statusText("Abra ka dabra...words here to test word wrap I hope it's working <3", Menu.Battle);
+            }],
+            ["Runes", function(){
+                statusText("Runecraft", Menu.Battle);
             }],
             ["Items", function(){
-                statusText("You have a potion...but you can't use it.", Menu.Battle);
+                statusText("You have a potion, but can't use it", Menu.Battle);
+            }]
+        ]);
+    },
+    Attack: function(){
+        defineChoices([
+            ["Light", function(){
+                statusText("You attempt a light attack...", function(){
+                    var damage = randomBetween(4, 6);
+                    var alive = entities.enemy.doDamage(damage);
+                    if (alive){
+                        statusText("You did " + damage + " points of damage!", function(){
+                            var damage = entities.enemy.getDamage();
+                            stats.hp -= damage;
+                            entities.hp.setText("HP: " + stats.hp)
+                            if (stats.hp > 0){
+                                statusText("You took " + damage + " points of damage!", Menu.Battle);
+                                return;
+                            }
+                            statusText("You died after you took " + damage + " points of damage...", resetGame);
+                        });
+                        return;
+                    }
+                    var name = entities.enemy.name;
+                    delete entities.enemy;
+                    statusText("You defeated the " + name + "!", Menu.Main);
+                });
+            }],
+            ["Heavy", function(){
+                statusText("You would do a heavy attack, but you're bad", Menu.Battle);
+            }],
+            ["Defend", function(){
+                statusText("You are on defence", function(){
+                    var damage = entities.enemy.getDamage() / 2;
+                    stats.hp -= damage;
+                    entities.hp.setText("HP: " + stats.hp)
+                    if (stats.hp > 0){
+                        statusText("You took " + damage + " points of damage!", Menu.Battle);
+                        return;
+                    }
+                    statusText("You died after you took " + damage + " points of damage...", resetGame);
+                });
+            }],
+            ["Return", function(){
+                Menu.Battle();
             }]
         ]);
     }
@@ -325,21 +397,14 @@ var Menu = {
  * Container for all on-screen entities.
  */
 var Entity = {
-    /**
-     * The current on-screen enemy.
-     * @constructor
-     * @param {string} name - Name of the enemy.
-     * @param {Image} image - Image object to represent the enemy.
-     * @param {int} hp - Number of Hit Points the enemy has.
-     * @property {function} update - Redraws the enemy sprite and HP.
-     * @property {function} doDamage - Does damage to the enemy, returns if the enemy is still alive.
-     * @returns {object} Enemy object.
-     */
-    Enemy: function(name, image, hp){
+    Enemy: function(name, image, hp, attack){
+        this.uuid = uuid4();
         this.born = Date.now();
         this.name = name;
-        this.image = image;
-        this.hp = hp;
+        this.image = new Image();
+        this.image.src = image;
+        this.hp = randomBetween(hp[0], hp[1]);
+        this.attack = attack;
         this.update = function(){
             canvas.drawImage(this.image, (element.width - 400) / 2, (element.height - 300) / 4, 400, 300);
             canvas.drawText("HP: " + this.hp, (element.width) / 2, (element.height - 300) / 5, "black", 15);
@@ -348,64 +413,40 @@ var Entity = {
             this.hp -= damage;
             return this.hp > 0;
         };
+        this.getDamage = function(damage){
+            return randomBetween(attack[0], attack[1]);
+        }
     },
-    /**
-     * The Wheel-choice entities.
-     * @constructor
-     * @param {float} startAngle - Angle to start arc.
-     * @param {int} x - X cordnate of this choice.
-     * @param {int} y - Y cordnate of this choice.
-     * @param {int} textX - The number of pixels to be offset along the X axis.
-     * @param {int} textY - The number of pixels to be offset along the Y axis.
-     * @property {function} update - Redraws the wheel choice and text.
-     * @property {function} grow - Increases the apparent size of the text and choice.
-     * @property {function} shrink - Restores the choice size to normal.
-     * @property {function} setCallback - Sets the callback of the choice.
-     * @property {function} setText - Set the text of this choice.
-     * @property {function} setDisabled - Set weather this choice is disabled.
-     * @property {function} getCallback - Return the choice callback if enabled, else return undefined.
-     * @property {function} setup - Set the text, and callback, then re-enable the choice.
-     * @returns {object} Choice object.
-     */
-    Choice: function(startAngle, angleLength, x, y){
+    Choice: function(x, y, relativeLoc){
+        this.uuid = uuid4();
         this.born = Date.now();
-        this.text = "";
-        this.radius = 75
         this.x = x;
+        if (relativeLoc.split()[1] === "r"){
+            this.textX = this.x - 5
+        }
+        else{
+            this.textX = this.x + 5
+        }
         this.y = y;
-        this.sa = startAngle * Math.PI;
-        this.ea = (startAngle + angleLength) * Math.PI
-        this.callback = undefined;
-        this.growOffset = 0;
+        this.textY = this.y + 8
+        this.text = "";
+        this.relativeLoc = relativeLoc;
         this.disabled = false;
+        this.callback = undefined;
         this.update = function(){
             if (this.disabled){
                 return;
             }
-            var sx = this.x + this.radius*Math.cos(this.sa);
-            var sy = this.y + this.radius*Math.sin(this.sa);
-            var ex = this.x + this.radius*Math.cos(this.ea);
-            var ey = this.y + this.radius*Math.sin(this.ea);
-            canvas.beginPath();
-            canvas.arc(this.x, this.y, this.radius, this.sa, this.ea, false);
-            canvas.lineWidth = 5;
-            canvas.strokeStyle = "black";
-            canvas.stroke();
-            canvas.drawText(this.text, ((sx + ex) / 2), ((sy + ey) / 2), "black", 15);
-            // Begin Debug
-            canvas.fillStyle = "red";
-            canvas.fillRect(sx - 3, sy - 3, 6, 6);
-            canvas.fillStyle = "green";
-            canvas.fillRect(ex - 5, ey - 5, 10, 10);
-            canvas.fillStyle = "black";
-            canvas.fillRect(((sx + ex) / 2) - 2,((sy + ey) / 2) - 2, 4, 4);
-            // End Debug
-        };
-        this.grow = function(){
-            this.radius = 100;
-        };
-        this.shrink = function(){
-            this.radius = 75;
+            canvas.drawText(this.text, this.textX, this.textY, "black", 25, "Arial");
+            var points = [];
+            if (this.relativeLoc.split("")[1] === "r"){
+                points = [[this.x-90, this.y], [this.x-80, this.y-18], [this.x+70, this.y-18], [this.x+70, this.y+18], [this.x-80, this.y+18]];
+            }
+            else if (this.relativeLoc.split("")[1] === "l"){
+                points = [[this.x-80, this.y-18], [this.x+80, this.y-18], [this.x+90, this.y], [this.x+80, this.y+18], [this.x-80, this.y+18]];
+            }
+            canvas.lineWidth = 2;
+            canvas.drawPolygon(points, undefined, "black");
         };
         this.setCallback = function(callback){
             this.callback = callback;
@@ -431,7 +472,62 @@ var Entity = {
             this.text = text;
             this.callback = callback;
             this.disabled = false;
-        }
+        };
+        this.highlight = function(){
+            entities.circle.setPointer(this.relativeLoc);
+        };
+    },
+    Circle: function(x, y){
+        this.uuid = uuid4();
+        this.born = Date.now();
+        this.x = x;
+        this.y = y;
+        this.current = null;
+        this.fill = 1;
+        this.update = function(){
+            canvas.beginPath();
+            canvas.arc(this.x, this.y, 50, 0, 2 * Math.PI, false);
+            canvas.lineWidth = 2;
+            canvas.strokeStyle = "black";
+            canvas.stroke();
+            canvas.closePath();
+            canvas.beginPath();
+            canvas.arc(this.x, this.y, 40, 0, 2 * Math.PI, false);
+            canvas.lineWidth = 2;
+            canvas.strokeStyle = "black";
+            canvas.stroke();
+            canvas.closePath();
+            if (this.fill !== 0){
+                var start = 2.0 + this.fill * -0.02 + 0.5;
+                var end = this.fill * 0.02 + 0.5;
+                canvas.beginPath();
+                canvas.fillStyle = "green";
+                canvas.arc(this.x, this.y, 40, start * Math.PI, end * Math.PI);
+                canvas.fill();
+                canvas.closePath();
+            }
+            if (this.current === null){
+                return;
+            }
+            var dict = {
+                "bl": [0.79 * Math.PI, 0.92 * Math.PI],
+                "br": [0.07 * Math.PI, 0.21 * Math.PI],
+                "tl": [1.07 * Math.PI, 1.21 * Math.PI],
+                "tr": [1.79 * Math.PI, 1.93 * Math.PI]
+            }
+            canvas.beginPath();
+            canvas.arc(this.x, this.y, 45, dict[this.current][0], dict[this.current][1], false);
+            canvas.lineWidth = 10;
+            canvas.strokeStyle = "black";
+            canvas.stroke();
+            canvas.closePath();
+        };
+        this.setPointer = function(current){
+            this.current = current;
+        };
+        this.setFill = function(percentage){
+            this.fill = percentage / 2;
+        };
     },
     /**
      * Some general text.
@@ -446,6 +542,7 @@ var Entity = {
      * @returns {object} Text object.
      */
     Text: function(text, color, x, y, size=12){
+        this.uuid = uuid4();
         this.born = Date.now();
         this.text = text;
         this.color = color;
@@ -478,6 +575,8 @@ var Entity = {
      * @returns {object} Text object.
      */
     Square: function(width, height, color, x, y){
+        this.uuid = uuid4();
+        this.born = Date.now();
         this.width = width;
         this.height = height;
         this.x = x;
@@ -488,7 +587,6 @@ var Entity = {
         };
     }
 }
-
 
 /**
  * Container for all items.
@@ -501,6 +599,7 @@ var Item = {
      * @returns {object} Potion object.
      */
     Potion: function(amount){
+        this.uuid = uuid4();
         this.born = Date.now();
         this.name = "Potion";
         this.id = "potion";
@@ -518,6 +617,7 @@ var Item = {
         }
     },
     Rune: function(amount, letter){
+        this.uuid = uuid4();
         this.born = Date.now();
         this.name = "Rune";
         this.id = "rune";
@@ -573,7 +673,27 @@ canvas.drawText = function(text, x, y, color, fontSize, fontFamily){
     };
     canvas.fillStyle = color;
     canvas.font = fontSize + "px " + fontFamily;
-    canvas.fillText(text, x, y);
+    wrapText(text, x, y, element.width, fontSize + 2);
+}
+
+canvas.drawPolygon = function(points, fillStyle, strokeStyle){
+    if (points.length <= 0){
+        return;
+    }
+    canvas.beginPath();
+    canvas.moveTo(points[0][0], points[0][1]);
+    for (var i = 0; i < points.length; i++){
+        canvas.lineTo(points[i][0], points[i][1]);
+    }
+    canvas.closePath();
+    if (strokeStyle !== undefined){
+        canvas.strokeStyle = strokeStyle;
+        canvas.stroke();
+    }
+    if (fillStyle !== undefined){
+        canvas.fillStyle = fillStyle;
+        canvas.fill();
+    }
 }
 
 var fps = 30;
@@ -591,22 +711,23 @@ window.requestAnimFrame = (function(){
 
 var audio = {
     playing: []
-}
+};
 
 var stats = {
     hp: 100,
     maxHp: 100
 };
+
 var inventory = [
     new Item.Potion(3)
-]
+];
 
 var entities = {
+};
 
-}
 var wheel = [];
 var tap = undefined;
-var currentCb = undefined;
+var currentChoice = undefined;
 var tapStart = undefined;
 var loop = undefined;
 var morse = {
@@ -646,11 +767,14 @@ var morse = {
     }
 };
 
-element.addEventListener("mousedown", function(event){
+addMultiEventListener(document, ["mousedown", "keydown"], function(event){
+    if (tapStart !== undefined){
+        return;
+    }
     tapStart = Date.now();
-});
+})
 
-element.addEventListener("mouseup", function(event){
+addMultiEventListener(document, ["mouseup", "keyup"], function(event){
     var holdTime = Date.now() - tapStart
     if (morse.receiving){
         if (holdTime < 500){
@@ -660,32 +784,41 @@ element.addEventListener("mouseup", function(event){
         processMorse("-");
         return;
     }
-    tapStart = undefined;
-    callFuncs(wheel, "shrink");
-    if (currentCb !== undefined){
-        currentCb();
-        currentCb = undefined;
+    if (tap !== undefined && tapStart > tap.when){
+        tapStart = undefined;
+        tap.callback();
         return;
     }
+    tapStart = undefined;
     if (holdTime < 250){
-        if (tap === undefined){
-            var cb = wheel[0].getCallback()
-            if (cb !== undefined){
-                cb();
+        if (currentChoice === undefined){
+            currentChoice = wheel[0];
+            currentChoice.highlight();
+            return;
+        }
+        function nextChoice(currentUUID){
+            for (var i = 0; i < wheel.length; i++){
+                if (wheel[i].uuid !== currentChoice.uuid){
+                    continue;
+                }
+                if (i === wheel.length - 1){
+                    currentChoice = wheel[0];
+                    currentChoice.highlight();
+                    return true;
+                    break;
+                }
+                currentChoice = wheel[i + 1];
+                if (currentChoice.disabled){
+                    return false;
+                }
+                currentChoice.highlight();
+                return true;
+                break;
             }
         }
-        else{
-            tap();
-        }
+        while (!nextChoice(currentChoice.uuid)){}
+        // I'm sure this is bad, will fix another time.
     }
-    // Begin Debug
-    if (entities.hasOwnProperty("text")){
-        entities.text.setText(holdTime);
-        entities.text.setLoc(event.layerX, event.layerY);
-        return;
-    }
-    entities.text = new Entity.Text(event.layerX + " " + event.layerY, "black", event.layerX, event.layerY);
-    // End Debug
 });
 
 startGame();
